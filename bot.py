@@ -8,7 +8,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.filters import Command
 
-from config import BOT_TOKEN
+from config import BOT_TOKEN, ADMIN_CHAT_ID
 from questions import questions
 from animals import animals
 
@@ -20,19 +20,17 @@ dp = Dispatcher(storage=storage)
 
 user_answers = {}
 
-
 class QuizState(StatesGroup):
     waiting_for_answer = State()
-
 
 def get_main_keyboard():
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🎯 Найти своё тотемное животное", callback_data="start_quiz")],
         [InlineKeyboardButton(text="🐾 Что такое программа опеки?", callback_data="about_opeka")],
-        [InlineKeyboardButton(text="📞 Связаться с зоопарком", callback_data="contact")]
+        [InlineKeyboardButton(text="📞 Связаться с зоопарком", callback_data="contact")],
+        [InlineKeyboardButton(text="💬 Оставить отзыв", callback_data="feedback")]
     ])
     return keyboard
-
 
 def get_question_keyboard(question_id):
     q = questions[question_id - 1]
@@ -42,15 +40,14 @@ def get_question_keyboard(question_id):
             [InlineKeyboardButton(text=option, callback_data=f"ans_{question_id}_{option[:50]}")])
     return keyboard
 
-
 def get_result_keyboard():
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🐾 Как стать опекуном?", callback_data="about_opeka")],
         [InlineKeyboardButton(text="🔄 Пройти ещё раз", callback_data="restart"),
-         InlineKeyboardButton(text="📤 Поделиться", callback_data="share")]
+         InlineKeyboardButton(text="📤 Поделиться", callback_data="share")],
+        [InlineKeyboardButton(text="💬 Оставить отзыв", callback_data="feedback")]
     ])
     return keyboard
-
 
 @dp.message(Command("start"))
 async def start(message: types.Message):
@@ -66,7 +63,6 @@ async def start(message: types.Message):
 
     await message.answer(welcome_text, reply_markup=get_main_keyboard(), parse_mode="Markdown")
 
-
 @dp.callback_query(lambda c: c.data == "start_quiz")
 async def start_quiz(callback_query: types.CallbackQuery, state: FSMContext):
     user_id = callback_query.from_user.id
@@ -79,7 +75,6 @@ async def start_quiz(callback_query: types.CallbackQuery, state: FSMContext):
     )
     await state.set_state(QuizState.waiting_for_answer)
     await callback_query.answer()
-
 
 @dp.callback_query(lambda c: c.data.startswith("ans_"))
 async def process_answer(callback_query: types.CallbackQuery, state: FSMContext):
@@ -155,7 +150,6 @@ async def process_answer(callback_query: types.CallbackQuery, state: FSMContext)
 
     await callback_query.answer()
 
-
 @dp.callback_query(lambda c: c.data == "about_opeka")
 async def about_opeka(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
@@ -189,12 +183,16 @@ async def about_opeka(callback_query: types.CallbackQuery):
     )
     await callback_query.answer()
 
-
 @dp.callback_query(lambda c: c.data == "contact")
 async def contact(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
     result = user_answers.get(user_id, {}).get("result", "")
     animal_name = animals.get(result, animals["manul"])["name"] if result else ""
+
+    await bot.send_message(
+        ADMIN_CHAT_ID,
+        f"📞 Обращение от пользователя {user_id}\nЕго тотемное животное: {animal_name}"
+    )
 
     contact_text = (
         "📞 *Связаться с Московским зоопарком*\n\n"
@@ -217,7 +215,6 @@ async def contact(callback_query: types.CallbackQuery):
     )
     await callback_query.answer()
 
-
 @dp.callback_query(lambda c: c.data == "back_to_result")
 async def back_to_result(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
@@ -238,7 +235,6 @@ async def back_to_result(callback_query: types.CallbackQuery):
     )
     await callback_query.answer()
 
-
 @dp.callback_query(lambda c: c.data == "restart")
 async def restart(callback_query: types.CallbackQuery, state: FSMContext):
     user_id = callback_query.from_user.id
@@ -251,7 +247,6 @@ async def restart(callback_query: types.CallbackQuery, state: FSMContext):
     )
     await state.set_state(QuizState.waiting_for_answer)
     await callback_query.answer()
-
 
 @dp.callback_query(lambda c: c.data == "share")
 async def share(callback_query: types.CallbackQuery):
@@ -275,10 +270,57 @@ async def share(callback_query: types.CallbackQuery):
         parse_mode="Markdown"
     )
 
+@dp.callback_query(lambda c: c.data == "feedback")
+async def feedback(callback_query: types.CallbackQuery):
+    user_id = callback_query.from_user.id
+    await callback_query.message.answer(
+        "💬 *Оставьте ваш отзыв о викторине*\n\n"
+        "Напишите одним сообщением:\n"
+        "• Что вам понравилось?\n"
+        "• Что можно улучшить?\n"
+        "• Какое животное вам выпало?\n\n"
+        "Спасибо за обратную связь! 🙌",
+        parse_mode="Markdown"
+    )
+    await callback_query.answer()
+
+@dp.message()
+async def save_feedback(message: types.Message):
+    user_id = message.from_user.id
+    if user_id in user_answers:
+        last_result = user_answers[user_id].get("result", "неизвестно")
+        await bot.send_message(
+            ADMIN_CHAT_ID,
+            f"💬 Отзыв от пользователя {user_id}\n"
+            f"Тотемное животное: {last_result}\n"
+            f"Текст: {message.text}"
+        )
+        await message.answer(
+            "✅ Спасибо за ваш отзыв! Он поможет нам стать лучше.\n"
+            "Чтобы пройти викторину заново, отправьте /start",
+            parse_mode="Markdown"
+        )
+    else:
+        await message.answer(
+            "🤔 Чтобы оставить отзыв, нажмите кнопку «💬 Оставить отзыв» в меню.\n"
+            "Или отправьте /start, чтобы начать викторину!",
+            parse_mode="Markdown"
+        )
+
+@dp.errors()
+async def errors_handler(update, exception):
+    logging.error(f"Ошибка: {exception}")
+    try:
+        await bot.send_message(
+            ADMIN_CHAT_ID,
+            f"⚠️ Ошибка в боте:\n{exception}"
+        )
+    except:
+        pass
+    return True
 
 async def main():
     await dp.start_polling(bot)
-
 
 if __name__ == "__main__":
     asyncio.run(main())
