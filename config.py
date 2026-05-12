@@ -1,5 +1,0 @@
-BOT_TOKEN = "8679524956:AAFufxUg3FVkEwutH3WKeiZZt6z34xgGYyM"
-
-CONTACT_EMAIL = "toma.ryabinina@gmail.com"
-
-ADMIN_CHAT_ID = 51622258
